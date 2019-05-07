@@ -18,6 +18,7 @@ int main(int argc, char **argv) {
 
     data = recv_rank+1;
     if(rank != 0) {
+        printf("Rank %d sending to%d\n", rank, next_rank);
         MPI_Send(&data, 1, MPI_INT, next_rank, rank, MPI_COMM_WORLD);
     }
 

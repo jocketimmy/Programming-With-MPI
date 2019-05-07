@@ -38,26 +38,51 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 {
 	/* Copy output file name to configuration */
 	config.outfile = outfile;
+
 	/* Get matrix size header */
 	MPI_File_open(MPI_COMM_WORLD, &A_file, (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &config.A_file);
-	MPI_File_read(config.A_file, void *buf, int count, MPI_Datatype datatype, MPI_Status *status);
+	MPI_File_read(config.A_file, config.A_dims, 2, MPI_INT, MPI_STATUS_IGNORE);
+	MPI_File_open(MPI_COMM_WORLD, &B_file, (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &config.B_file);
+	MPI_File_read(config.B_file, config.B_dims, 2, MPI_INT, MPI_STATUS_IGNORE);
+	config.matrix_size = config.A_dims[0]*config.A_dims[1];
+
 	/* Broadcast global matrix sizes */
+	MPI_Bcast(&config.matrix_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	/* Set dim of tiles relative to the number of processes as NxN where N=sqrt(world_size) */
+    MPI_Comm_size(MPI_COMM_WORLD, &config.world_size);
+	MPI_Dims_create(config.world_size, 2, &config.dim);
+
 
 	/* Verify dim of A and B matches for matul and both are square*/
+	if(config.A_dims[0] != config.A_dims[1] || config.B_dims[0] != config.B_dims[1] ||
+		config.A_dims[1] != config.B_dims[0]) {
+			printf("You have failed me for the last time young Timmy, wrong dimensions!");
+			return;
+	}
 
 	/* Create Cart communicator for NxN processes */
+	int period[2] = {1,1}; //chansning att det ska vara periodic topology
+	MPI_Cart_create(MPI_COMM_WORLD, 2, config.dim, &period, 1, &grid_comm);
 
 	/* Sub div cart communicator to N row communicator */
+	int rowRemains[2] = {1,0};//pure chansning att dom vill att row är true och col false
+	MPI_Cart_sub(config.grid_comm, rowRemains, &row_comm);
 
 	/* Sub div cart communicator to N col communicator */
+	int colRemains[2] = {0,1};//pure chansning att dom vill att row är false och col true
+	MPI_Cart_sub(config.grid_comm, colRemains, &col_comm);
 
 	/* Setup sizes of full matrices */
+	//chansar på att det är gjort
 
 	/* Setup sizes of local matrix tiles */
+	config.local_dims[0] = config.A_dims[0] / config.dim[0];
+	config.local_dims[1] = config.A_dims[1] / config.dim[1];
 
 	/* Create subarray datatype for local matrix tile */
+	int starts[2] = {0,0};
+	MPI_Type_create_subarray(2, config.A_dims, config.local_dims, starts, MPI_ORDER_C, MPI_INT, config.block);
 
 	/* Create data array to load actual block matrix data */
 
