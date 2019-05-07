@@ -37,9 +37,10 @@ struct Config config;
 void init_matmul(char *A_file, char *B_file, char *outfile)
 {
 	/* Copy output file name to configuration */
-
+	config.outfile = outfile;
 	/* Get matrix size header */
-
+	MPI_File_open(MPI_COMM_WORLD, &A_file, (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &config.A_file);
+	MPI_File_read(config.A_file, void *buf, int count, MPI_Datatype datatype, MPI_Status *status);
 	/* Broadcast global matrix sizes */
 
 	/* Set dim of tiles relative to the number of processes as NxN where N=sqrt(world_size) */
@@ -87,7 +88,7 @@ void compute_fox()
 		/* Diag + i broadcast block A horizontally and use A_tmp to preserve own local A */
 
 		/* dgemm with blocks */
-		
+
 		/* Shfting block B upwards and receive from process below */
 
 	}
