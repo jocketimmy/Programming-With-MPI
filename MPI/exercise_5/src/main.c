@@ -23,7 +23,6 @@ int main(int argc, char *argv[])
 	double pi = 0.0;
 	char *filename = NULL;
 	MPI_File fh;
-	char resultString[4];
 
 	MPI_Init(&argc, &argv);
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -65,39 +64,44 @@ int main(int argc, char *argv[])
         }
     }
 
-	char out[100] = {world_rank + '0', ' '};
-	//count/(NUM_ITER/num_ranks) + '0'
-	//char worldrank[] = ;
-	//char countre[] = {(count/(NUM_ITER/num_ranks)) + '0'};
-	//strcat(out, worldrank);
-	//strcat(out, countre);
-	//char out[100] = {world_rank + '0'};
-	//strcat(out, world_rank);
-	//strcat(out, " ");
-	//strcat(out, count/(NUM_ITER/num_ranks));
-	//strcat(out, "\n");
-	MPI_Offset MPIoff = 4 * world_rank;
+	char out[10] = {world_rank + '0', ' '};
+	char floatstring [9];
+	float value = (float)count/((float)NUM_ITER/(float)num_ranks);
+	snprintf(floatstring, 9, "%f", value);
+	strcat(out, floatstring);
+	strcat(out, "\n");
+	int strlength = strlen(out);
+	MPI_Offset MPIoff = strlength * (world_rank);
+	
 	MPI_File_open(MPI_COMM_WORLD, "results.txt", (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &fh);
 	MPI_File_write_at(fh, MPIoff, &out, strlen(out), MPI_CHAR, MPI_STATUS_IGNORE);
-	// Close the file
-	MPI_File_close(&fh);
-
+	//MPI_File_close(&fh);
+	
 	
 	MPI_Reduce(&count, &result, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 	printf("rank %d: %d / %d = %f\n", world_rank, count, flip, (double)count / (double)flip);
 	if (world_rank == 0) {
-		//count = 0;
-		//for(int i = 0; i < num_ranks; i++) {
-		//	count += counts[i];
-		//}
 		init_pi(seed*world_rank, filename);
 
 		compute_pi(NUM_ITER, &result, &pi);
+		char out2[13] = {'p', 'i', ' ', '=', ' '};
+		char floatstring2 [9];
+		snprintf(floatstring2, 9, "%f", (float)pi);
+		strcat(out2, floatstring2);
+		printf("\n");
+		printf(out2);
+		printf("\n");
+		printf(floatstring2);
+		printf("\n");
 
-		//compute_pi(flip, &count, &pi);
 
-		printf("pi: %f\n", pi);
+		MPI_Offset MPIoff2 = strlength * (num_ranks);
+
+		printf("Num ranks: %d", num_ranks);
+	
+		MPI_File_write_at(fh, MPIoff2, &out2, strlen(out2), MPI_CHAR, MPI_STATUS_IGNORE);
 	}
+	MPI_File_close(&fh);
 
 	cleanup_pi();
 	MPI_Finalize();
