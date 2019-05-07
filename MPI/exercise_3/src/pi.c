@@ -1,4 +1,4 @@
-#include "pi.h"
+#include "../include/pi.h"
 
 void init_pi(int set_seed, char *outfile)
 {
@@ -23,4 +23,6 @@ void cleanup_pi()
 
 void compute_pi(int flip, int *local_count, double *answer)
 {
+    *answer = ((double)(*local_count) / (double)flip) * 4.0;
+    printf("The result is %f\n", *answer);
 }

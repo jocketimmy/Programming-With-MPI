@@ -10,7 +10,7 @@
 
 #include "pi.c"
 
-#define NUM_ITER 1000
+#define NUM_ITER 100000000
 
 void print_usage();
 
@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 	int opt;
 	int world_rank;
 	int num_ranks;
-	int count = 0, flip = 10000, seed = 921;
+	int count = 0, flip = 10000, seed = 1;
 	double pi = 0.0;
 	char *filename = NULL;
 
@@ -68,11 +68,10 @@ int main(int argc, char *argv[])
 	printf("rank %d: %d / %d = %f\n", world_rank, count, flip, (double)count / (double)flip);
 	if (world_rank == 0) {
 		for(int i = 0; i < num_ranks; i++) {
-			MPI_Irecv(&counts[i], 1, MPI_INT, i, 0, MPI_COMM_WORLD, &request[world_rank]);
+			MPI_Irecv(&counts[i], 1, MPI_INT, i, 0, MPI_COMM_WORLD, &request[i]);
 		}
 		MPI_Waitall(num_ranks, request, status);
-		printf("Hello timmy");
-
+		count = 0;
 		for(int i = 0; i < num_ranks; i++) {
 			count += counts[i];
 		}
