@@ -5,7 +5,7 @@
 #include <math.h>
 #include <mpi.h>
 
-#include "block_matmul.h"
+#include "block_matmul.c"
 
 void print_usage();
 
