@@ -50,8 +50,8 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 		config.matrix_size = config.A_dims[0]*config.A_dims[1];
 	}
 
-	/* Broadcast global matrix sizes */
 	MPI_Bcast(&config.matrix_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	
 	if(config.world_rank != 0){
 		config.A_dims[0] = sqrt(config.matrix_size);
 		config.A_dims[1] = sqrt(config.matrix_size);
@@ -75,16 +75,28 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	config.local_size = config.local_dims[0] * config.local_dims[1];
 
 	/* Create Cart communicator for NxN processes */
-	int period[2] = {1,1}; //chansning att det ska vara periodic topology
+	int *period = (int*) malloc(2 * sizeof(int));
+	period[0] = 1;
+	period[1] = 1;
 	MPI_Cart_create(MPI_COMM_WORLD, 2, config.dim, period, 1, &config.grid_comm);
 
 	/* Sub div cart communicator to N row communicator */
-	int rowRemains[2] = {0,1};//pure chansning att dom vill att row är true och col false
+	int *rowRemains = (int*) malloc(2 * sizeof(int));
+
+	rowRemains[0] = 0;
+	rowRemains[1] = 1;//pure chansning att dom vill att row är true och col false
 	MPI_Cart_sub(config.grid_comm, rowRemains, &config.row_comm);
 
 	/* Sub div cart communicator to N col communicator */
-	int colRemains[2] = {1,0};//pure chansning att dom vill att row är false och col true
+	int *colRemains = (int*) malloc(2 * sizeof(int));
+	colRemains[0] = 1;
+	colRemains[1] = 0;//pure chansning att dom vill att row är false och col true
 	MPI_Cart_sub(config.grid_comm, colRemains, &config.col_comm);
+
+	MPI_Comm_rank(config.col_comm, &config.col_rank);
+	MPI_Comm_rank(config.row_comm, &config.row_rank);
+    MPI_Comm_size(config.col_comm, &config.col_size);
+    MPI_Comm_size(config.row_comm, &config.row_size);
 
 	/* Setup sizes of full matrices */
 
@@ -108,15 +120,28 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	MPI_File_set_view(config.A_file, disp, MPI_DOUBLE, config.block, "native", MPI_INFO_NULL);
 	MPI_File_set_view(config.B_file, disp, MPI_DOUBLE, config.block, "native", MPI_INFO_NULL);
 
-	double testArray3[config.local_size];
-	double testArray4[config.local_size];
+	double *testArray3 = (double*) malloc(config.local_size * sizeof(double));
+	double *testArray4 = (double*) malloc(config.local_size * sizeof(double));
+	double *testArray5 = (double*) malloc(config.local_size * sizeof(double));
+
+	//double testArray3[config.local_size];
+	//double testArray4[config.local_size];
+	//double testArray5[config.local_size];
+
 
 	MPI_File_read_all(config.A_file, testArray3, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
 	MPI_File_read_all(config.B_file, testArray4, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
 
 	config.A = testArray3;
+	printf("%f\n\n", config.A[config.local_size-1]);
 	config.B = testArray4;
-
+	config.A_tmp = testArray5;
+	/*double cArray[config.local_size];
+	for(int i = 0; i < config.local_size; i++){
+		cArray[i] = 0.0;
+	}
+	config.C = cArray;
+*/
 	/* Close data source files */
 	MPI_File_close(&config.A_file);
 	MPI_File_close(&config.B_file);
@@ -133,17 +158,54 @@ void cleanup_matmul()
 	/* Cleanup */
 }
 
+void multiply_matrices()
+{
+  int i, j, k;
+  // Loop nest optimized algorithm
+  for (i = 0 ; i < config.local_size ; i++) {
+    for (k = 0 ; k < config.local_size ; k++) {
+      for (j = 0 ; j < config.local_size ; j++) {
+        config.C[i*j] += config.A_tmp[i*k] * config.B[k*j];
+      }
+    }
+  }
+}
+
 void compute_fox()
 {
-
+	printf("%f\n\n", config.A[config.local_size-1]);
+	
 	/* Compute source and target for verticle shift of B blocks */
+	int prev_rank, next_rank, recv_buffer[config.local_size];
+	int diag_array[config.dim[0]];
+	for(int i = 0; i < config.dim[0]; i++){
+		diag_array[i] = i;
+	}
+	printf("Local size: %d\n", config.local_size);
+	
+	//for(int j = 0; j < config.local_size; j++) {
+	//	printf("-j: %d, A is: %f-", j, config.A[j]);
+	//}
+	
+		//printf("A is: %f", config.A[config.local_size-1]);
 
+
+    prev_rank = (config.col_rank + (config.col_size - 1)) % config.col_size;
+    next_rank = (config.col_rank + 1) % config.col_size;
 	for (int i = 0; i < config.dim[0]; i++) {
+		printf("Loop %d\n", i);
 		/* Diag + i broadcast block A horizontally and use A_tmp to preserve own local A */
+		//MPI_Bcast(&config.A, 4, MPI_DOUBLE, 0, config.row_comm);
+		MPI_Bcast(&config.A, 496, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+		//printf("hello");
+		//MPI_Barrier(MPI_COMM_WORLD);
+
+		//(diag_array[config.col_rank] + i) % config.row_size
 		/* dgemm with blocks */
-
+		
 		/* Shfting block B upwards and receive from process below */
 
 	}
+	return;
 }
