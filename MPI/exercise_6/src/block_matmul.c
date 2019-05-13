@@ -136,10 +136,12 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 
 	config.A = testArray3;
 	/*if(config.world_rank == (config.world_size - 1)){
-	}*/
-	//printf("C-ANSWERS %f\n", config.A[config.local_size-1]);
-	//return;
+	printf("C-ANSWERS %f\n", config.A[config.local_size-1]);
 
+	}
+	//printf("C-ANSWERS %f\n", config.A[config.local_size-1]);
+	return;
+	*/
 	printf("%f\n\n", config.A[config.local_size-1]);
 	config.B = testArray4;
 	config.A_tmp = testArray5;
@@ -164,12 +166,17 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 void cleanup_matmul()
 {
 	/* Rank zero writes header specifying dim of result matrix C */
-	/*if(config.world_rank == (config.world_size - 1)){
-		for(int i = 0; i < config.local_size; i++){
-			printf("%f ", config.C[i]);
-		}
-	}*/
-	printf("%f ", config.C[config.local_size-1]);
+	if(config.world_rank == (config.world_size - 1)){
+		//for(int i = 0; i < config.local_size; i++){
+		//	printf("%f ", config.C[i]);
+		//}
+		printf("Last element in last process: %f, \n", config.C[config.local_size-2]);
+
+		printf("Last element in last process: %f, \n", config.C[config.local_size-1]);
+		printf("Last element in last process: %f, \n", config.C[config.local_size]);
+
+	}
+	//printf("%f \n", config.C[config.local_size-1]);
 
 	/* Set fileview of process to respective matrix block with header offset */
 
@@ -197,10 +204,12 @@ void compute_fox()
 	printf("%f\n\n", config.A[config.local_size-1]);
 	
 	/* Compute source and target for verticle shift of B blocks */
-	int prev_rank, next_rank, recv_buffer[config.local_size];
+	int prev_rank, next_rank;
 
 	printf("Local size: %d\n", config.local_size);
-	
+
+	// Temporary array to store B values
+	double *tempArray = (double*) malloc(config.local_size * sizeof(double));
     prev_rank = (config.col_rank + (config.col_size - 1)) % config.col_size;
     next_rank = (config.col_rank + 1) % config.col_size;
 	for (int i = 0; i < config.dim[0]; i++) {
@@ -222,13 +231,14 @@ void compute_fox()
 		if(config.col_rank == 0) {
         	MPI_Send(config.B, config.local_size, MPI_DOUBLE, prev_rank, 0, config.col_comm);
     	}
-		double tempArray[config.local_size];
+		
 		MPI_Recv(tempArray, config.local_size, MPI_DOUBLE, next_rank, 0, config.col_comm, MPI_STATUS_IGNORE);
 		//printf("Rank %d received %d from rank %d\n", rank, recv_rank, prev_rank);
 		if(config.col_rank != 0) {
 			//printf("Rank %d sending to%d\n", rank, next_rank);
 			MPI_Send(config.B, config.local_size, MPI_DOUBLE, prev_rank, 0, config.col_comm);
 		}
+		config.B = tempArray;
 	}
 	return;
 }
