@@ -128,20 +128,34 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	//double testArray4[config.local_size];
 	//double testArray5[config.local_size];
 
+	
+
 
 	MPI_File_read_all(config.A_file, testArray3, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
 	MPI_File_read_all(config.B_file, testArray4, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
 
 	config.A = testArray3;
+	/*if(config.world_rank == (config.world_size - 1)){
+	}*/
+	//printf("C-ANSWERS %f\n", config.A[config.local_size-1]);
+	//return;
+
 	printf("%f\n\n", config.A[config.local_size-1]);
 	config.B = testArray4;
 	config.A_tmp = testArray5;
-	/*double cArray[config.local_size];
+
+	// Initialize temp array
+	for(int i = 0; i < config.local_size; i++){
+		config.A_tmp[i] = config.A[i];
+	}
+
+	// Initialize C array to zero
+	double *cArray = (double*) malloc(config.local_size * sizeof(double));
 	for(int i = 0; i < config.local_size; i++){
 		cArray[i] = 0.0;
 	}
 	config.C = cArray;
-*/
+
 	/* Close data source files */
 	MPI_File_close(&config.A_file);
 	MPI_File_close(&config.B_file);
@@ -150,6 +164,12 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 void cleanup_matmul()
 {
 	/* Rank zero writes header specifying dim of result matrix C */
+	/*if(config.world_rank == (config.world_size - 1)){
+		for(int i = 0; i < config.local_size; i++){
+			printf("%f ", config.C[i]);
+		}
+	}*/
+	printf("%f ", config.C[config.local_size-1]);
 
 	/* Set fileview of process to respective matrix block with header offset */
 
@@ -162,11 +182,12 @@ void multiply_matrices()
 {
   int i, j, k;
   // Loop nest optimized algorithm
-  for (i = 0 ; i < config.local_size ; i++) {
-    for (k = 0 ; k < config.local_size ; k++) {
-      for (j = 0 ; j < config.local_size ; j++) {
-        config.C[i*j] += config.A_tmp[i*k] * config.B[k*j];
-      }
+  for (i = 0 ; i < config.local_dims[0] ; i++) {
+    for (k = 0 ; k < config.local_dims[0] ; k++) {
+      for (j = 0 ; j < config.local_dims[0] ; j++) {
+        config.C[(i*config.local_dims[0]) + k] += config.A_tmp[(i*config.local_dims[0]) + j] * config.B[(j*config.local_dims[0]) + k];
+		//printf("%f ",  config.C[(i*config.local_dims[0]) + k]);
+	  }
     }
   }
 }
@@ -177,35 +198,37 @@ void compute_fox()
 	
 	/* Compute source and target for verticle shift of B blocks */
 	int prev_rank, next_rank, recv_buffer[config.local_size];
-	int diag_array[config.dim[0]];
-	for(int i = 0; i < config.dim[0]; i++){
-		diag_array[i] = i;
-	}
+
 	printf("Local size: %d\n", config.local_size);
 	
-	//for(int j = 0; j < config.local_size; j++) {
-	//	printf("-j: %d, A is: %f-", j, config.A[j]);
-	//}
-	
-		//printf("A is: %f", config.A[config.local_size-1]);
-
-
     prev_rank = (config.col_rank + (config.col_size - 1)) % config.col_size;
     next_rank = (config.col_rank + 1) % config.col_size;
 	for (int i = 0; i < config.dim[0]; i++) {
 		printf("Loop %d\n", i);
 		/* Diag + i broadcast block A horizontally and use A_tmp to preserve own local A */
 		//MPI_Bcast(&config.A, 4, MPI_DOUBLE, 0, config.row_comm);
-		MPI_Bcast(&config.A, 496, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-		//printf("hello");
-		//MPI_Barrier(MPI_COMM_WORLD);
+		MPI_Bcast(config.A_tmp, config.local_size, MPI_DOUBLE, (config.col_rank + i) % config.row_size, config.row_comm);
 
 		//(diag_array[config.col_rank] + i) % config.row_size
 		/* dgemm with blocks */
+		multiply_matrices();
+
+		//Reset A_tmp
+		for(int j = 0; j < config.local_size; j++){
+			config.A_tmp[i] = config.A[i];
+		}
 		
 		/* Shfting block B upwards and receive from process below */
-
+		if(config.col_rank == 0) {
+        	MPI_Send(config.B, config.local_size, MPI_DOUBLE, prev_rank, 0, config.col_comm);
+    	}
+		double tempArray[config.local_size];
+		MPI_Recv(tempArray, config.local_size, MPI_DOUBLE, next_rank, 0, config.col_comm, MPI_STATUS_IGNORE);
+		//printf("Rank %d received %d from rank %d\n", rank, recv_rank, prev_rank);
+		if(config.col_rank != 0) {
+			//printf("Rank %d sending to%d\n", rank, next_rank);
+			MPI_Send(config.B, config.local_size, MPI_DOUBLE, prev_rank, 0, config.col_comm);
+		}
 	}
 	return;
 }
