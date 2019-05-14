@@ -19,7 +19,7 @@ struct Config {
 	/* Cart communicator dim and ranks */
 	int dim[2], coords[2];
 	int world_rank, world_size, grid_rank;
-	int row_rank, row_size, col_rank, col_size;
+	int row_rank, row_size, col_rank, col_size, my_row, my_col;
 
 	/* Full matrix dim */
 	int A_dims[2];
@@ -51,7 +51,7 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	}
 
 	MPI_Bcast(&config.matrix_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-	
+
 	if(config.world_rank != 0){
 		config.A_dims[0] = sqrt(config.matrix_size);
 		config.A_dims[1] = sqrt(config.matrix_size);
@@ -60,7 +60,7 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	}
 
 	/* Set dim of tiles relative to the number of processes as NxN where N=sqrt(world_size) */
-    MPI_Comm_size(MPI_COMM_WORLD, &config.world_size);
+  MPI_Comm_size(MPI_COMM_WORLD, &config.world_size);
 	MPI_Dims_create(config.world_size, 2, config.dim);
 
 	/* Verify dim of A and B matches for matul and both are square*/
@@ -78,25 +78,33 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	int *period = (int*) malloc(2 * sizeof(int));
 	period[0] = 1;
 	period[1] = 1;
-	MPI_Cart_create(MPI_COMM_WORLD, 2, config.dim, period, 1, &config.grid_comm);
+	MPI_Cart_create(MPI_COMM_WORLD, 2, config.dim, period, 1, &(config.grid_comm));
+
+	//int coordinates[2];
+	int *coordinates = (int*) malloc(2 * sizeof(int));
+	MPI_Comm_rank(config.grid_comm, &(config.grid_rank));
+	MPI_Cart_coords(config.grid_comm, config.grid_rank, 2, coordinates);
+  config.my_row = coordinates[0];
+  config.my_col = coordinates[1];
+	config.coords[0] = coordinates[0];
+	config.coords[1] = coordinates[1];
 
 	/* Sub div cart communicator to N row communicator */
 	int *rowRemains = (int*) malloc(2 * sizeof(int));
-
 	rowRemains[0] = 0;
 	rowRemains[1] = 1;//pure chansning att dom vill att row är true och col false
-	MPI_Cart_sub(config.grid_comm, rowRemains, &config.row_comm);
+	MPI_Cart_sub(config.grid_comm, rowRemains, &(config.row_comm));
 
 	/* Sub div cart communicator to N col communicator */
 	int *colRemains = (int*) malloc(2 * sizeof(int));
 	colRemains[0] = 1;
 	colRemains[1] = 0;//pure chansning att dom vill att row är false och col true
-	MPI_Cart_sub(config.grid_comm, colRemains, &config.col_comm);
+	MPI_Cart_sub(config.grid_comm, colRemains, &(config.col_comm));
 
 	MPI_Comm_rank(config.col_comm, &config.col_rank);
 	MPI_Comm_rank(config.row_comm, &config.row_rank);
-    MPI_Comm_size(config.col_comm, &config.col_size);
-    MPI_Comm_size(config.row_comm, &config.row_size);
+  MPI_Comm_size(config.col_comm, &config.col_size);
+  MPI_Comm_size(config.row_comm, &config.row_size);
 
 	/* Setup sizes of full matrices */
 
@@ -109,54 +117,40 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 	/* Set fileview of process to respective matrix block */
 
 	/* Collective read blocks from files */
+	int starts[2] = {config.coords[0]*config.local_dims[0], config.coords[1]*config.local_dims[0]};
+	int largeSize[2] = {config.A_dims[0], config.A_dims[0]};
+	int smallSize[2] = {config.local_dims[0], config.local_dims[0]};
+	MPI_Type_create_subarray(2, largeSize, smallSize, starts, MPI_ORDER_C, MPI_DOUBLE, &(config.block));
+	MPI_Offset disp = (sizeof(int) * 2);
 
-	MPI_Aint length = (sizeof(double))*config.local_size;
-	MPI_Aint extent = config.world_size * length;
-	MPI_Offset disp = (sizeof(int) * 2) + (config.world_rank * length);
-	MPI_Datatype contig, filetype;
-	MPI_Type_contiguous(config.local_size, MPI_DOUBLE, &contig);
-	MPI_Type_create_resized(contig, 0, extent, &config.block);
+	/*Below commented code is for contiguous*/
+	//MPI_Aint length = (sizeof(double))*config.local_dims[0];
+	//MPI_Aint extent = config.dim[0] * length;// length;
+	//MPI_Offset disp = (sizeof(int) * 2) + (sizeof(double))*((config.local_size*config.dim[0]*config.col_rank) + (config.local_dims[0] * config.row_rank));
+	//MPI_Datatype contig;
+	//MPI_Type_contiguous(config.local_dims[0], MPI_DOUBLE, &contig);
+	//MPI_Type_create_resized(contig, 0, extent, &(config.block));
+
 	MPI_Type_commit(&config.block);
 	MPI_File_set_view(config.A_file, disp, MPI_DOUBLE, config.block, "native", MPI_INFO_NULL);
 	MPI_File_set_view(config.B_file, disp, MPI_DOUBLE, config.block, "native", MPI_INFO_NULL);
 
-	double *testArray3 = (double*) malloc(config.local_size * sizeof(double));
-	double *testArray4 = (double*) malloc(config.local_size * sizeof(double));
-	double *testArray5 = (double*) malloc(config.local_size * sizeof(double));
+	config.A = (double*) malloc(config.local_size * sizeof(double));
+	config.B = (double*) malloc(config.local_size * sizeof(double));
+	config.A_tmp = (double*) malloc(config.local_size * sizeof(double));
 
-	//double testArray3[config.local_size];
-	//double testArray4[config.local_size];
-	//double testArray5[config.local_size];
-
-	
-
-
-	MPI_File_read_all(config.A_file, testArray3, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
-	MPI_File_read_all(config.B_file, testArray4, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
-
-	config.A = testArray3;
-	/*if(config.world_rank == (config.world_size - 1)){
-	printf("C-ANSWERS %f\n", config.A[config.local_size-1]);
-
-	}
-	//printf("C-ANSWERS %f\n", config.A[config.local_size-1]);
-	return;
-	*/
-	printf("%f\n\n", config.A[config.local_size-1]);
-	config.B = testArray4;
-	config.A_tmp = testArray5;
+	MPI_File_read_all(config.A_file, config.A, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
+	MPI_File_read_all(config.B_file, config.B, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
 
 	// Initialize temp array
 	for(int i = 0; i < config.local_size; i++){
 		config.A_tmp[i] = config.A[i];
 	}
-
 	// Initialize C array to zero
-	double *cArray = (double*) malloc(config.local_size * sizeof(double));
+	config.C = (double*) malloc(config.local_size * sizeof(double));
 	for(int i = 0; i < config.local_size; i++){
-		cArray[i] = 0.0;
+		config.C[i] = 0.0;
 	}
-	config.C = cArray;
 
 	/* Close data source files */
 	MPI_File_close(&config.A_file);
@@ -166,79 +160,49 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 void cleanup_matmul()
 {
 	/* Rank zero writes header specifying dim of result matrix C */
-	if(config.world_rank == (config.world_size - 1)){
-		//for(int i = 0; i < config.local_size; i++){
-		//	printf("%f ", config.C[i]);
-		//}
-		printf("Last element in last process: %f, \n", config.C[config.local_size-2]);
-
-		printf("Last element in last process: %f, \n", config.C[config.local_size-1]);
-		printf("Last element in last process: %f, \n", config.C[config.local_size]);
-
+	MPI_File_open(MPI_COMM_WORLD, "C_computed.answer", (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &config.C_file);
+	if(config.world_rank == 0){
+		MPI_File_write(config.C_file, config.A_dims, 2, MPI_INT, MPI_STATUS_IGNORE); // Should be C_dims but the same
 	}
-	//printf("%f \n", config.C[config.local_size-1]);
-
 	/* Set fileview of process to respective matrix block with header offset */
-
+	MPI_Offset disp = (sizeof(int) * 2);
+	//MPI_Offset disp = (sizeof(int) * 2) + (sizeof(double))*((config.local_size*config.dim[0]*config.col_rank) + (config.local_dims[0] * config.row_rank));
+	MPI_File_set_view(config.C_file, disp, MPI_DOUBLE, config.block, "native", MPI_INFO_NULL);
 	/* Collective write and close file */
-
+	MPI_File_write(config.C_file, config.C, config.local_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
+	MPI_File_close(&config.C_file);
 	/* Cleanup */
 }
 
-void multiply_matrices()
-{
+void multiply_matrices(double* A, double* B, double* C) {
   int i, j, k;
-  // Loop nest optimized algorithm
   for (i = 0 ; i < config.local_dims[0] ; i++) {
     for (k = 0 ; k < config.local_dims[0] ; k++) {
       for (j = 0 ; j < config.local_dims[0] ; j++) {
-        config.C[(i*config.local_dims[0]) + k] += config.A_tmp[(i*config.local_dims[0]) + j] * config.B[(j*config.local_dims[0]) + k];
-		//printf("%f ",  config.C[(i*config.local_dims[0]) + k]);
+        C[(i*config.local_dims[0]) + k] = C[(i*config.local_dims[0]) + k] + A[(i*config.local_dims[0]) + j] * B[(j*config.local_dims[0]) + k];
 	  }
     }
   }
 }
 
-void compute_fox()
-{
-	printf("%f\n\n", config.A[config.local_size-1]);
-	
+void compute_fox() {
 	/* Compute source and target for verticle shift of B blocks */
-	int prev_rank, next_rank;
-
-	printf("Local size: %d\n", config.local_size);
-
-	// Temporary array to store B values
-	double *tempArray = (double*) malloc(config.local_size * sizeof(double));
-    prev_rank = (config.col_rank + (config.col_size - 1)) % config.col_size;
-    next_rank = (config.col_rank + 1) % config.col_size;
+	int source, dst, root;
+	MPI_Cart_shift(config.col_comm, 0, -1, &source, &dst);
 	for (int i = 0; i < config.dim[0]; i++) {
-		printf("Loop %d\n", i);
+		root = (config.my_row + i) % config.dim[0];
 		/* Diag + i broadcast block A horizontally and use A_tmp to preserve own local A */
-		//MPI_Bcast(&config.A, 4, MPI_DOUBLE, 0, config.row_comm);
-		MPI_Bcast(config.A_tmp, config.local_size, MPI_DOUBLE, (config.col_rank + i) % config.row_size, config.row_comm);
-
-		//(diag_array[config.col_rank] + i) % config.row_size
+		if(root == config.my_col) {
+			MPI_Bcast(config.A, config.local_size, MPI_DOUBLE, root, config.row_comm);
+			multiply_matrices(config.A, config.B, config.C);
+		}
+		else {
+			MPI_Bcast(config.A_tmp, config.local_size, MPI_DOUBLE, root, config.row_comm);
+			multiply_matrices(config.A_tmp, config.B, config.C);
+		}
 		/* dgemm with blocks */
-		multiply_matrices();
-
-		//Reset A_tmp
-		for(int j = 0; j < config.local_size; j++){
-			config.A_tmp[i] = config.A[i];
-		}
-		
 		/* Shfting block B upwards and receive from process below */
-		if(config.col_rank == 0) {
-        	MPI_Send(config.B, config.local_size, MPI_DOUBLE, prev_rank, 0, config.col_comm);
-    	}
-		
-		MPI_Recv(tempArray, config.local_size, MPI_DOUBLE, next_rank, 0, config.col_comm, MPI_STATUS_IGNORE);
-		//printf("Rank %d received %d from rank %d\n", rank, recv_rank, prev_rank);
-		if(config.col_rank != 0) {
-			//printf("Rank %d sending to%d\n", rank, next_rank);
-			MPI_Send(config.B, config.local_size, MPI_DOUBLE, prev_rank, 0, config.col_comm);
-		}
-		config.B = tempArray;
+		MPI_Sendrecv_replace(config.B, config.local_size, MPI_DOUBLE, dst, 0, source, 0, config.col_comm, MPI_STATUS_IGNORE);
 	}
 	return;
 }

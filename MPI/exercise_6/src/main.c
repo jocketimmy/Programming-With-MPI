@@ -4,8 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <mpi.h>
-
-#include "block_matmul.c"
+#include "block_matmul.h"
 
 void print_usage();
 
@@ -14,7 +13,7 @@ int main(int argc, char *argv[])
 	int opt;
 	int world_rank;
 	int repeat = 1;
-	void (*matmul)() = &compute_fox; 
+	void (*matmul)() = &compute_fox;
 
 	double avg_runtime = 0.0, prev_avg_runtime = 0.0, stddev_runtime = 0.0;
 	double start_time, end_time;

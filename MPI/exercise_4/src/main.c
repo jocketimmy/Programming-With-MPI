@@ -5,10 +5,8 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
-
 #include <mpi.h>
-
-#include "pi.c"
+#include "pi.h"
 
 #define NUM_ITER 100000000
 
@@ -23,7 +21,6 @@ int main(int argc, char *argv[])
 	double pi = 0.0;
 	char *filename = NULL;
 	MPI_File fh;
-
 
 	MPI_Init(&argc, &argv);
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -64,26 +61,16 @@ int main(int argc, char *argv[])
             count++;
         }
     }
-	
+
 	MPI_Reduce(&count, &result, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 	printf("rank %d: %d / %d = %f\n", world_rank, count, flip, (double)count / (double)flip);
 	if (world_rank == 0) {
-		//count = 0;
-		//for(int i = 0; i < num_ranks; i++) {
-		//	count += counts[i];
-		//}
 		init_pi(seed*world_rank, filename);
-
 		compute_pi(NUM_ITER, &result, &pi);
-
-		//compute_pi(flip, &count, &pi);
-
 		printf("pi: %f\n", pi);
 	}
-
 	cleanup_pi();
 	MPI_Finalize();
-
 	return 0;
 }
 
