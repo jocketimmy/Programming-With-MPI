@@ -160,7 +160,7 @@ void init_matmul(char *A_file, char *B_file, char *outfile)
 void cleanup_matmul()
 {
 	/* Rank zero writes header specifying dim of result matrix C */
-	MPI_File_open(MPI_COMM_WORLD, "C_computed.answer", (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &config.C_file);
+	MPI_File_open(MPI_COMM_WORLD, config.outfile, (MPI_MODE_RDWR | MPI_MODE_CREATE), MPI_INFO_NULL, &config.C_file);
 	if(config.world_rank == 0){
 		MPI_File_write(config.C_file, config.A_dims, 2, MPI_INT, MPI_STATUS_IGNORE); // Should be C_dims but the same
 	}
